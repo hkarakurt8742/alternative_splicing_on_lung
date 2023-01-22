@@ -1,0 +1,905 @@
+---
+title: "GSE123904_das_analysis"
+author: "Hamza Umut Karakurt"
+date: '2023-01-14'
+output:
+  html_document:
+    toc: yes
+    theme: united
+---
+
+# INTRODUCTION
+
+Sierra Object using GSE123904 (Lung Cancer Data using Normal, Tumor and Metastasis Data) prepared using Sierra, Scran and Scater packages. *DUTest* function is used for differential alternative splicing analysis (via DEXSeq package).
+
+## Required Package Import
+
+```{r, include=FALSE}
+library(Sierra)
+library(scater)
+library(scran)
+#library(DropletUtils)
+library(scuttle)
+library(robustbase)
+library(bluster)
+library(Matrix)
+library(dendextend)
+library(stringr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+library(grid)
+library(clusterProfiler)
+```
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r}
+set.seed(9999)
+```
+
+
+```{r}
+gtf_gr <- rtracklayer::import("GRCh38.108_ensembl.chr_filtered.gtf")
+```
+
+## Pre-Processed Data Import
+
+```{r}
+load("rta_data.RData")
+```
+
+## Cell Type Abbreviations
+
+DENDRITIC=Dendritic Cells
+ENDOTHELIAL=Endothelial Cells
+EPITHELIAL=Epithelial (and Tumor) Cells
+FIBROBLAST=Fibroblasts
+IG=Ig
+MACROPHAGE=Macrophages
+MAST=Mast Cells
+MDSC=Myeloid Derived Suppressor Cells
+MICROGLIA=Microglia
+MONOCYTE=Monocyte
+NEUTROPHIL=Neutrophil
+NK=Natural Killer Cells
+NKT=Natural Killer Like T Cells
+PERICYTE=Pericytes
+PROLIFERATING=Proliferating Cells
+Th=T Helper Cells
+Tm=Memory T Cells
+Treg=Regulatory T Cells
+
+## UMAP and TSNE Plots of Cell Types, Data Source and Cell Labels
+
+```{r}
+plotReducedDim(merged_sce , dimred = "TSNE" , colour_by = "cell_type")
+plotReducedDim(merged_sce , dimred = "TSNE" , colour_by = "source")
+plotReducedDim(merged_sce , dimred = "TSNE" , colour_by = "cell_label")
+```
+
+## Number of Cells in Each *Cell Type*,*Data Source* and *Cell Label*
+
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+ggplot(data=as.data.frame(table(merged_sce$cell_type)), aes(x=Var1, y=Freq, fill = Var1, label = Freq)) + geom_bar(stat="identity")+theme_minimal() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 5, position = position_stack(vjust = 0.5)) + theme(legend.position = "none")  
+
+ggplot(data=as.data.frame(table(merged_sce$source)), aes(x=Var1, y=Freq, fill = Var1, label = Freq)) + geom_bar(stat="identity")+theme_minimal() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 10, position = position_stack(vjust = 0.5))+ theme(legend.position = "none")  
+
+ggplot(data=as.data.frame(table(merged_sce$cell_label)), aes(x=Var1, y=Freq, fill = Var1, label = Freq)) + geom_bar(stat="identity")+theme_minimal() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 3, position = position_stack(vjust = 0.5))+ theme(legend.position = "none")  
+```
+
+## Cell Labels with more than 500 cells in it
+
+Due to low number of cells in some *cell label clusters*, statistical analysis will be biased. 
+
+```{r}
+kable(as.data.frame(table(merged_sce$cell_label)[table(merged_sce$cell_label) > 500]) , digits = 4, "simple")
+```
+# Tumor and Metastatis Sample Comparisons (T Cells)
+
+## Comparison of Memory T Cells of Tumor and Metastatsis Samples
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+tm_met_tumor <- DUTest(peaks_sce, 
+                    population.1 = "Tm_Met", 
+                    population.2 = "Tm_Tumor",
+                    exp.thresh = 0.1, 
+                    feature.type = c("UTR3", "exon" , "intron"))
+
+tm_met_tumor.top <- subset(tm_met_tumor, abs(Log2_fold_change) > 1)
+```
+
+### Results Table (Memory T Cells)
+
+```{r}
+kable(tm_met_tumor.top , digits = 4, "simple")
+```
+
+```{r}
+de_genes_as_tm <- tm_met_tumor.top$gene_name
+go_res_as_tm <- enrichGO(de_genes_as_tm, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+dotplot(go_res_as_tm , showCategory = 15)
+```
+
+### Plots of Differentially Alternative Spliced Regions (Memory T Cells)
+
+```{r}
+tm_coq10b.plot <- rownames(subset(tm_met_tumor.top, gene_name == "COQ10B"))
+tm_krr1.plot <- rownames(subset(tm_met_tumor.top, gene_name == "KRR1"))
+tm_ctla4.plot <- rownames(subset(tm_met_tumor.top, gene_name == "CTLA4"))
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = tm_coq10b.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = tm_krr1.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = tm_ctla4.plot)
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = tm_coq10b.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = tm_krr1.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = tm_ctla4.plot)
+```
+
+### Coverage Plots (Memory T Cells)
+
+```{r}
+outdir = "bam_subsets/"
+bam.files_rps27A_tm <- paste0(outdir, c("Memory_T_Cells_Tumor.RPS27A.bam", "Memory_T_Cells_Metastasis.RPS27A.bam"))
+bam.files_coq10b_tm <- paste0(outdir, c("Memory_T_Cells_Tumor.COQ10B.bam", "Memory_T_Cells_Metastasis.COQ10B.bam"))
+bam.files_krr1_tm <- paste0(outdir, c("Memory_T_Cells_Tumor.KRR1.bam", "Memory_T_Cells_Metastasis.KRR1.bam"))
+bam.files_ctla4_tm <- paste0(outdir, c("Memory_T_Cells_Tumor.CTLA4.bam", "Memory_T_Cells_Metastasis.CTLA4.bam"))
+```
+
+```{r}
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "RPS27A", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_rps27A_tm,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(tm_met_tumor.top, gene_name == "RPS27A")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "COQ10B", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_coq10b_tm,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(tm_met_tumor.top, gene_name == "COQ10B")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "KRR1", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_krr1_tm,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(tm_met_tumor.top, gene_name == "KRR1")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "CTLA4", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_ctla4_tm,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(tm_met_tumor.top, gene_name == "CTLA4")))
+```
+
+
+### Heatmap of Selected Regions with AS Events and Genes With Selected Regions (Memory T Cells)
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_regions <- as.matrix(peak_counts_matrix[as.character(c(tm_coq10b.plot,tm_krr1.plot,tm_ctla4.plot)),])
+counts_of_selected_regions <- counts_of_selected_regions[,colnames(peak_counts_matrix) %like% 'Tm_Met|Tm_Tumor']
+
+counts_of_selected_regions <- cbind(rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "Tm_Tumor"]),rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "Tm_Met"]))
+colnames(counts_of_selected_regions) <- c("Memory T Cells (Tumor)" , "Memory T Cells (Metastasis)")
+counts_of_selected_regions <- as.data.frame(melt(counts_of_selected_regions))
+colnames(counts_of_selected_regions) <- c("Region" , "Cell_Label" , "Counts")
+```
+
+### Heatmap of Counts of Genes With Selected Regions (Memory T Cells)
+
+```{r}
+counts_matrix <- counts(merged_sce)
+colnames(counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_genes <- as.matrix(counts_matrix[as.character(c("COQ10B","KRR1","CTLA4")),])
+counts_of_selected_genes <- counts_of_selected_genes[,colnames(counts_matrix) %like% 'Tm_Met|Tm_Tumor']
+
+counts_of_selected_genes <- cbind(rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "Tm_Tumor"]),rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "Tm_Met"]))
+colnames(counts_of_selected_genes) <- c("Memory T Cells (Tumor)" , "Memory T Cells (Metastasis)")
+counts_of_selected_genes <- as.data.frame(melt(counts_of_selected_genes))
+colnames(counts_of_selected_genes) <- c("Gene" , "Cell_Label" , "Counts")
+```
+
+```{r , fig.show="hold" , fig.dim = c(15, 10)}
+p1 <- ggplot(counts_of_selected_genes, aes(Cell_Label, Gene, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+p2 <- ggplot(counts_of_selected_regions, aes(Cell_Label, Region, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Differential Expression Analysis between Memory T Cells between Tumor and Metastasis Samples
+
+```{r}
+load("tm_de_results.RData")
+results.classified_tm <- DEsingle::DEtype(results = tm_de_results, threshold = 0.01)
+results.sig_tm <- results.classified_tm[results.classified_tm$pvalue.adj.FDR < 0.01, ]
+results.DEg_tm <- results.sig_tm[results.sig_tm$Type == "DEg", ]
+```
+
+```{r}
+de_genes_tm <- rownames(results.DEg_tm)
+go_res_de_tm <- enrichGO(de_genes_tm, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+dotplot(go_res_de_tm , showCategory = 15)
+```
+
+
+## Comparison of Helper T Cells of Tumor and Metastatsis Samples 
+
+```{r}
+th_met_tumor <- DUTest(peaks_sce, 
+                    population.1 = "Th_Met", 
+                    population.2 = "Th_Tumor",
+                    exp.thresh = 0.1, 
+                    feature.type = c("UTR3", "exon" , "intron"))
+
+th_met_tumor.top <- subset(th_met_tumor, abs(Log2_fold_change) > 1)
+```
+
+### Results Table (T Helper Cells)
+
+```{r}
+kable(th_met_tumor.top, digits = 4)
+```
+
+```{r}
+de_genes_as_th <- th_met_tumor.top$gene_name
+go_res_as_th <- enrichGO(de_genes_as_th, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_as_th , showCategory = 20)
+```
+
+### Plots of Differentially Alternative Spliced Regions (T Helper Cells)
+
+```{r}
+th_cyba.plot <- rownames(subset(th_met_tumor.top, gene_name == "CYBA"))
+th_ctla4.plot <- rownames(subset(th_met_tumor.top, gene_name == "CTLA4"))
+th_hspa1b.plot <- rownames(subset(th_met_tumor.top, gene_name == "HSPA1B"))
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = th_cyba.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = th_ctla4.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = th_hspa1b.plot)
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = th_cyba.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = th_ctla4.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = th_hspa1b.plot)
+```
+
+### Coverage Plots (Helper T Cells)
+
+```{r}
+outdir = "bam_subsets/"
+bam.files_hspa1b_th <- paste0(outdir, c("Helper_T_Cells_Tumor.HSPA1B.bam", "Helper_T_Cells_Metastasis.HSPA1B.bam"))
+bam.files_rps27a_th <- paste0(outdir, c("Helper_T_Cells_Tumor.RPS27A.bam", "Helper_T_Cells_Metastasis.RPS27A.bam"))
+bam.files_ctla4_th <- paste0(outdir, c("Helper_T_Cells_Tumor.CTLA4.bam", "Helper_T_Cells_Metastasis.CTLA4.bam"))
+bam.files_cyba_th <- paste0(outdir, c("Helper_T_Cells_Tumor.CYBA.bam", "Helper_T_Cells_Metastasis.CYBA.bam"))
+bam.files_ambra_th <- paste0(outdir, c("Helper_T_Cells_Tumor.AMBRA1.bam", "Helper_T_Cells_Metastasis.AMBRA1.bam"))
+```
+
+```{r}
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "HSPA1B", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_hspa1b_th,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(th_met_tumor.top, gene_name == "HSPA1B")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "RPS27A", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_rps27a_th,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(th_met_tumor.top, gene_name == "RPS27A")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "CTLA4", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_ctla4_th,
+             bamfile.tracknames=c("Tumor", "Metastasis") , peaks.annot = th_ctla4.plot)
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "CYBA", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_cyba_th,
+             bamfile.tracknames=c("Tumor", "Metastasis") , peaks.annot = th_cyba.plot)
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "AMBRA1", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_ambra_th,
+             bamfile.tracknames=c("Tumor", "Metastasis") , 
+             peaks.annot = rownames(subset(th_met_tumor.top, gene_name == "AMBRA1")))
+```
+
+
+### Heatmap of Selected Regions with AS Events and Genes With Selected Regions (T Helper Cells)
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_regions <- as.matrix(peak_counts_matrix[as.character(c(th_cyba.plot,th_ctla4.plot)),])
+counts_of_selected_regions <- counts_of_selected_regions[,colnames(peak_counts_matrix) %like% 'Th_Met|Th_Tumor']
+
+counts_of_selected_regions <- cbind(rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "Th_Tumor"]),rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "Th_Met"]))
+colnames(counts_of_selected_regions) <- c("Helper T Cells (Tumor)" , "Helper T Cells (Metastasis)")
+counts_of_selected_regions <- as.data.frame(melt(counts_of_selected_regions))
+colnames(counts_of_selected_regions) <- c("Region" , "Cell_Label" , "Counts")
+```
+
+### Heatmap of Counts of Genes With Selected Regions (T Helper Cells)
+
+```{r}
+counts_matrix <- counts(merged_sce)
+colnames(counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_genes <- as.matrix(counts_matrix[as.character(c("CYBA","CTLA4")),])
+counts_of_selected_genes <- counts_of_selected_genes[,colnames(counts_matrix) %like% 'Th_Met|Th_Tumor']
+
+counts_of_selected_genes <- cbind(rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "Th_Tumor"]),rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "Th_Met"]))
+colnames(counts_of_selected_genes) <- c("Helper T Cells (Tumor)" , "Helper T Cells (Metastasis)")
+counts_of_selected_genes <- as.data.frame(melt(counts_of_selected_genes))
+colnames(counts_of_selected_genes) <- c("Gene" , "Cell_Label" , "Counts")
+```
+
+```{r , fig.show="hold" , fig.align = 'center' , fig.dim = c(15, 10)}
+p1 <- ggplot(counts_of_selected_genes, aes(Cell_Label, Gene, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+p2 <- ggplot(counts_of_selected_regions, aes(Cell_Label, Region, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Differential Expression Analysis between Helper T Cells between Tumor and Metastasis Samples
+
+```{r}
+load("th_de_results.RData")
+results.classified_th <- DEsingle::DEtype(results = th_de_results, threshold = 0.01)
+results.sig_th <- results.classified_th[results.classified_th$pvalue.adj.FDR < 0.01, ]
+results.DEg_th <- results.sig_th[results.sig_th$Type == "DEg", ]
+```
+
+```{r}
+de_genes_th <- rownames(results.DEg_th)
+go_res_de_th <- enrichGO(de_genes_th, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_de_th , showCategory = 20)
+```
+
+
+# Tumor and Metastatis Sample Comparisons (Epithelial Cells)
+
+## Comparison of Epithelial Cells of Tumor and Metastatsis Samples
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+ept_met_tumor <- DUTest(peaks_sce, 
+                    population.1 = "EPITHELIAL_Met", 
+                    population.2 = "EPITHELIAL_Tumor",
+                    exp.thresh = 0.1, 
+                    feature.type = c("UTR3", "exon" , "intron"))
+
+ept_met_tumor.top <- subset(ept_met_tumor, abs(Log2_fold_change) > 1)
+```
+
+### Results Table (Epithelial Cells) (First 50 results)
+
+```{r}
+kable(ept_met_tumor.top[1:50,], digits = 4, "simple" , n = 100)
+```
+
+```{r}
+de_genes_as_ept <- ept_met_tumor.top$gene_name
+go_res_as_ept <- enrichGO(de_genes_as_ept, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_as_ept , showCategory = 20)
+```
+
+### Plots of Differentially Alternative Spliced Regions (Epithelial Cells)
+
+```{r}
+ept_akr1c3.plot <- rownames(subset(ept_met_tumor.top, gene_name == "AKR1C3"))
+ept_aco2.plot <- rownames(subset(ept_met_tumor.top, gene_name == "ACO2"))
+ept_akr1c1.plot <- rownames(subset(ept_met_tumor.top, gene_name == "AKR1C1"))
+ept_auts2.plot <- rownames(subset(ept_met_tumor.top, gene_name == "AUTS2")) 
+ept_txnrd1.plot <- rownames(subset(ept_met_tumor.top, gene_name == "TXNRD1")) 
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = ept_akr1c3.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = ept_aco2.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = ept_akr1c1.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = ept_auts2.plot)
+PlotRelativeExpressionTSNE(peaks_sce, peaks.to.plot = ept_txnrd1.plot)
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = ept_akr1c3.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = ept_aco2.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = ept_akr1c1.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = ept_auts2.plot)
+PlotRelativeExpressionBox(peaks_sce, peaks.to.plot = ept_txnrd1.plot)
+```
+
+### Coverage Plots (Epithelial Cells)
+
+```{r}
+outdir = "bam_subsets/"
+bam.files_txnrd1_ept <- paste0(outdir, c("Epithelial_Cells_Tumor.TXNRD1.bam", "Epithelial_Cells_Metastasis.TXNRD1.bam"))
+bam.files_akr1c3_ept <- paste0(outdir, c("Epithelial_Cells_Tumor.AKR1C3.bam", "Epithelial_Cells_Metastasis.AKR1C3.bam"))
+bam.files_sat1_ept <- paste0(outdir, c("Epithelial_Cells_Tumor.SAT1.bam", "Epithelial_Cells_Metastasis.SAT1.bam"))
+bam.files_fosb_ept <- paste0(outdir, c("Epithelial_Cells_Tumor.FOSB.bam", "Epithelial_Cells_Metastasis.FOSB.bam"))
+bam.files_aco2_ept <- paste0(outdir, c("Epithelial_Cells_Tumor.ACO2.bam", "Epithelial_Cells_Metastasis.ACO2.bam"))
+
+```
+
+```{r}
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "TXNRD1", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_txnrd1_ept,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(ept_met_tumor.top, gene_name == "TXNRD1")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "AKR1C3", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_akr1c3_ept,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(ept_met_tumor.top, gene_name == "AKR1C3")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "SAT1", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_sat1_ept,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(ept_met_tumor.top, gene_name == "SAT1")))
+
+PlotCoverage(genome_gr = gtf_gr, 
+             geneSymbol = "FOSB", 
+             genome = "hg38", label.transcripts = TRUE,
+             bamfiles = bam.files_fosb_ept,
+             bamfile.tracknames=c("Tumor", "Metastasis"),
+             peaks.annot = rownames(subset(ept_met_tumor.top, gene_name == "FOSB")))
+
+# PlotCoverage(genome_gr = gtf_gr, 
+#               geneSymbol = "ACO2", 
+#               genome = "hg38", label.transcripts = TRUE,
+#               bamfiles = bam.files_aco2_ept,
+#               bamfile.tracknames=c("Tumor", "Metastasis"),
+#               peaks.annot = rownames(subset(ept_met_tumor.top, gene_name == "ACO2")))
+```
+
+
+### Heatmap of Selected Regions with AS Events and Genes With Selected Regions (Epithelial Cells)
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_regions <- as.matrix(peak_counts_matrix[as.character(c(ept_akr1c3.plot,ept_aco2.plot,ept_akr1c1.plot,
+                                                                          ept_auts2.plot,
+                                                                          ept_txnrd1.plot)),])
+counts_of_selected_regions <- counts_of_selected_regions[,colnames(peak_counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor']
+
+counts_of_selected_regions <- cbind(rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "EPITHELIAL_Tumor"]),rowSums(counts_of_selected_regions[,colnames(counts_of_selected_regions) == "EPITHELIAL_Met"]))
+colnames(counts_of_selected_regions) <- c("Epithelial Cells (Tumor)" , "Epithelial Cells (Metastasis)")
+counts_of_selected_regions <- as.data.frame(melt(counts_of_selected_regions))
+colnames(counts_of_selected_regions) <- c("Region" , "Cell_Label" , "Counts")
+```
+
+### Heatmap of Counts of Genes With Selected Regions (Epithelial Cells)
+
+```{r}
+counts_matrix <- counts(merged_sce)
+colnames(counts_matrix) <- as.character(peaks_sce$CellIdent)
+counts_of_selected_genes <- as.matrix(counts_matrix[as.character(c("AKR1C3","ACO2","AKR1C1","AUTS2","TXNRD1")),])
+counts_of_selected_genes <- counts_of_selected_genes[,colnames(counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor']
+
+counts_of_selected_genes <- cbind(rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "EPITHELIAL_Tumor"]),rowSums(counts_of_selected_genes[,colnames(counts_of_selected_genes) == "EPITHELIAL_Met"]))
+colnames(counts_of_selected_genes) <- c("Epithelial Cells (Tumor)" , "Epithelial Cells (Metastasis)")
+counts_of_selected_genes <- as.data.frame(melt(counts_of_selected_genes))
+colnames(counts_of_selected_genes) <- c("Gene" , "Cell_Label" , "Counts")
+```
+
+```{r , fig.show="hold",fig.dim = c(15, 10)}
+p1 <- ggplot(counts_of_selected_genes, aes(Cell_Label, Gene, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+p2 <- ggplot(counts_of_selected_regions, aes(Cell_Label, Region, fill= Counts , label = Counts)) + geom_tile(color = "black") + scale_fill_gradient(low = "white", high = "red") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + geom_text(size = 2)+ theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Differential Expression Analysis between Epithelial Cells between Tumor and Metastasis Samples
+
+```{r}
+load("ept_de_results.RData")
+results.classified_ept <- DEsingle::DEtype(results = ept_de_results, threshold = 0.01)
+results.sig_ept <- results.classified_ept[results.classified_ept$pvalue.adj.FDR < 0.01, ]
+results.DEg_ept <- results.sig_ept[results.sig_ept$Type == "DEg", ]
+```
+
+```{r}
+de_genes_ept <- rownames(results.DEg_ept)
+go_res_de_ept <- enrichGO(de_genes_ept, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_de_ept , showCategory = 20)
+```
+
+# SUBCLUSTER AND TRAJECTORY ANALYSIS (Memory T Cells)
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+tm_sce_peak_counts <- counts(peaks_sce)[,colnames(peak_counts_matrix) %like% 'Tm_Met|Tm_Tumor']
+tm_sce_peak_counts <- tm_sce_peak_counts[rowSums(tm_sce_peak_counts) > 7,]
+
+tm_sce_peak <- SingleCellExperiment(assays = list(counts = tm_sce_peak_counts))
+tm_sce_peak$cell_labels <- as.character(peaks_sce$CellIdent)[colnames(peak_counts_matrix) %like% 'Tm_Met|Tm_Tumor']
+
+clusters <- quickCluster(tm_sce_peak , method = "igraph")
+tm_sce_peak <- computeSumFactors(tm_sce_peak , cluster=clusters)
+tm_sce_peak$clusters <- clusters
+tm_sce_peak <- logNormCounts(tm_sce_peak)
+dec <- modelGeneVarByPoisson(tm_sce_peak)
+top <- getTopHVGs(dec , n = 4000)
+tm_sce_peak <- denoisePCA(tm_sce_peak, subset.row=top, technical=dec)
+tm_sce_peak <- runTSNE(tm_sce_peak)
+tm_sce_peak <- runUMAP(tm_sce_peak)
+```
+
+```{r}
+plotPCA(tm_sce_peak , colour_by = "cell_labels")
+plotUMAP(tm_sce_peak , colour_by = "cell_labels")
+plotTSNE(tm_sce_peak , colour_by = "cell_labels")
+```
+
+```{r}
+library(slingshot)
+library(RColorBrewer)
+tm_sce_peak <- slingshot(tm_sce_peak, reducedDim='PCA' , clusterLabels = as.character(tm_sce_peak$cell_labels) , start.clus = "Tm_Tumor" , end.clus = "Tm_Met")
+
+embedded <- embedCurves(tm_sce_peak, "UMAP")
+embedded <- slingCurves(embedded)[[1]]
+embedded <- data.frame(embedded$s[embedded$ord,])
+```
+
+```{r}
+plotUMAP(tm_sce_peak, colour_by="slingPseudotime_1") +
+  geom_path(data=embedded, aes(x=Dim.1, y=Dim.2), linewidth=1)
+```
+
+```{r}
+library(tradeSeq)
+
+# fit negative binomial GAM
+sce <- fitGAM(counts = as.matrix(counts(tm_sce_peak)[top,]), sds = as.SlingshotDataSet(tm_sce_peak))
+colnames(sce) <- tm_sce_peak$cell_labels
+# test for dynamic expression
+ATres_tm <- associationTest(sce)
+ATres_tm <- ATres_tm[!(is.na(ATres_tm$pvalue)),]
+ATres_tm$padj <- p.adjust(ATres_tm$pvalue)
+ATres_tm <- ATres_tm[ATres_tm$meanLogFC > 1,]
+```
+
+```{r}
+topgenes <- rownames(ATres_tm[order(ATres_tm$padj), ])[1:50]
+pst.ord <- order(tm_sce_peak$slingPseudotime_1, na.last = NA)
+heatdata <- assays(tm_sce_peak)$counts[topgenes, pst.ord]
+heatclus <- tm_sce_peak$cell_labels[pst.ord]
+colnames(heatdata) <- tm_sce_peak$cell_labels
+heatdata <- heatdata[ , order(colnames(heatdata))]
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 20)}
+heatmap(log1p(as.matrix(heatdata)), Colv = NA, Rowv = NA, ColSideColors = brewer.pal(9,"Set1")[heatclus])
+```
+
+```{r}
+kable(ATres_tm[1:50,], digits = 4, "simple" , n = 100)
+```
+
+```{r}
+de_genes_pseudo_tm <- t(as.data.frame(str_split(rownames(ATres_tm),":")))[,1]
+go_res_pseudo_tm <- enrichGO(de_genes_pseudo_tm, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_pseudo_tm , showCategory = 20)
+```
+
+# SUBCLUSTER ANALYSIS (Epithelial T Cells (Normal - Tumor - Metastasis))
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+ept_sce_peak_counts <- counts(peaks_sce)[,colnames(peak_counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor|EPITHELIAL_Normal']
+ept_sce_peak_counts <- ept_sce_peak_counts[rowSums(ept_sce_peak_counts) > 7,]
+
+ept_sce_peak <- SingleCellExperiment(assays = list(counts = ept_sce_peak_counts))
+ept_sce_peak$cell_labels <- as.character(peaks_sce$CellIdent)[colnames(peak_counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor|EPITHELIAL_Normal']
+
+clusters <- quickCluster(ept_sce_peak , method = "igraph")
+ept_sce_peak <- computeSumFactors(ept_sce_peak , cluster=clusters)
+ept_sce_peak$clusters <- clusters
+ept_sce_peak <- logNormCounts(ept_sce_peak)
+dec <- modelGeneVarByPoisson(ept_sce_peak)
+top <- getTopHVGs(dec , n = 4000)
+ept_sce_peak <- denoisePCA(ept_sce_peak, subset.row=top, technical=dec)
+ept_sce_peak <- runTSNE(ept_sce_peak)
+ept_sce_peak <- runUMAP(ept_sce_peak)
+```
+
+```{r}
+plotPCA(ept_sce_peak , colour_by = "cell_labels")
+plotUMAP(ept_sce_peak , colour_by = "cell_labels")
+plotTSNE(ept_sce_peak , colour_by = "cell_labels")
+```
+
+```{r}
+library(slingshot)
+library(RColorBrewer)
+ept_sce_peak <- slingshot(ept_sce_peak, reducedDim='PCA' , clusterLabels = as.character(ept_sce_peak$cell_labels) , start.clus = "EPITHELIAL_Normal" , end.clus = "EPITHELIAL_Met")
+
+embedded <- embedCurves(ept_sce_peak, "UMAP")
+embedded <- slingCurves(embedded)[[1]]
+embedded <- data.frame(embedded$s[embedded$ord,])
+```
+
+```{r}
+plotUMAP(ept_sce_peak, colour_by="slingPseudotime_1") +
+  geom_path(data=embedded, aes(x=Dim.1, y=Dim.2), linewidth=1)
+```
+
+```{r}
+library(tradeSeq)
+
+# fit negative binomial GAM
+sce <- fitGAM(counts = as.matrix(counts(ept_sce_peak)[top,]), sds = as.SlingshotDataSet(ept_sce_peak))
+colnames(sce) <- ept_sce_peak$cell_labels
+# test for dynamic expression
+ATres_ept <- associationTest(sce)
+ATres_ept <- ATres_ept[!(is.na(ATres_ept$pvalue)),]
+ATres_ept$padj <- p.adjust(ATres_ept$pvalue)
+ATres_ept <- ATres_ept[ATres_ept$meanLogFC > 1,]
+```
+
+```{r}
+topgenes <- rownames(ATres_ept[order(ATres_ept$pvalue), ])[1:100]
+pst.ord <- order(ept_sce_peak$slingPseudotime_1, na.last = NA)
+heatdata <- assays(ept_sce_peak)$counts[topgenes, pst.ord]
+heatclus <- ept_sce_peak$cell_labels[pst.ord]
+colnames(heatdata) <- ept_sce_peak$cell_labels
+heatdata <- heatdata[ , order(colnames(heatdata))]
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 20)}
+heatmap(log1p(as.matrix(heatdata)), Colv = NA, Rowv = NA, ColSideColors = brewer.pal(9,"Set1")[heatclus])
+```
+
+```{r}
+kable(ATres_ept[1:50,], digits = 4, "simple" , n = 100)
+```
+
+```{r}
+de_genes_pseudo_ept <- t(as.data.frame(str_split(rownames(ATres_ept),":")))[,1]
+go_res_pseudo_ept <- enrichGO(as.character(de_genes_pseudo_ept), OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_pseudo_ept , showCategory = 20)
+```
+
+# SUBCLUSTER ANALYSIS (Epithelial T Cells (Tumor - Metastasis))
+
+```{r}
+peak_counts_matrix <- counts(peaks_sce)
+colnames(peak_counts_matrix) <- as.character(peaks_sce$CellIdent)
+ept2_sce_peak_counts <- counts(peaks_sce)[,colnames(peak_counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor']
+ept2_sce_peak_counts <- ept2_sce_peak_counts[rowSums(ept2_sce_peak_counts) > 7,]
+
+ept2_sce_peak <- SingleCellExperiment(assays = list(counts = ept2_sce_peak_counts))
+ept2_sce_peak$cell_labels <- as.character(peaks_sce$CellIdent)[colnames(peak_counts_matrix) %like% 'EPITHELIAL_Met|EPITHELIAL_Tumor']
+
+clusters <- quickCluster(ept2_sce_peak , method = "igraph")
+ept2_sce_peak <- computeSumFactors(ept2_sce_peak , cluster=clusters)
+ept2_sce_peak$clusters <- clusters
+ept2_sce_peak <- logNormCounts(ept2_sce_peak)
+dec <- modelGeneVarByPoisson(ept2_sce_peak)
+top <- getTopHVGs(dec , n = 4000)
+ept2_sce_peak <- denoisePCA(ept2_sce_peak, subset.row=top, technical=dec)
+ept2_sce_peak <- runTSNE(ept2_sce_peak)
+ept2_sce_peak <- runUMAP(ept2_sce_peak)
+```
+
+```{r}
+plotPCA(ept2_sce_peak , colour_by = "cell_labels")
+plotUMAP(ept2_sce_peak , colour_by = "cell_labels")
+plotTSNE(ept2_sce_peak , colour_by = "cell_labels")
+```
+
+```{r}
+library(slingshot)
+library(RColorBrewer)
+ept2_sce_peak <- slingshot(ept2_sce_peak, reducedDim='PCA' , clusterLabels = as.character(ept2_sce_peak$cell_labels) , start.clus = "EPITHELIAL_Tumor" , end.clus = "EPITHELIAL_Met")
+
+embedded <- embedCurves(ept2_sce_peak, "UMAP")
+embedded <- slingCurves(embedded)[[1]]
+embedded <- data.frame(embedded$s[embedded$ord,])
+```
+
+```{r}
+plotUMAP(ept2_sce_peak, colour_by="slingPseudotime_1") +
+  geom_path(data=embedded, aes(x=Dim.1, y=Dim.2), linewidth=1)
+```
+
+```{r}
+library(tradeSeq)
+
+# fit negative binomial GAM
+sce <- fitGAM(counts = as.matrix(counts(ept2_sce_peak)[top,]), sds = as.SlingshotDataSet(ept2_sce_peak))
+colnames(sce) <- ept2_sce_peak$cell_labels
+# test for dynamic expression
+ATres_ept2 <- associationTest(sce)
+ATres_ept2 <- ATres_ept2[!(is.na(ATres_ept2$pvalue)),]
+ATres_ept2$padj <- p.adjust(ATres_ept2$pvalue)
+ATres_ept2 <- ATres_ept2[ATres_ept2$meanLogFC > 1,]
+```
+
+```{r}
+topgenes <- rownames(ATres_ept2[order(ATres_ept2$pvalue), ])[1:100]
+pst.ord <- order(ept2_sce_peak$slingPseudotime_1, na.last = NA)
+heatdata <- assays(ept2_sce_peak)$counts[topgenes, pst.ord]
+heatclus <- ept2_sce_peak$cell_labels[pst.ord]
+colnames(heatdata) <- ept2_sce_peak$cell_labels
+heatdata <- heatdata[ , order(colnames(heatdata))]
+```
+
+```{r , fig.align = 'center' , fig.dim = c(15, 10)}
+heatmap(log1p(as.matrix(heatdata)), Colv = NA, Rowv = NA, ColSideColors = brewer.pal(9,"Set3")[heatclus] , scale = "none")
+```
+
+```{r}
+kable(ATres_ept2[1:50,], digits = 4, "simple" , n = 100)
+```
+
+```{r}
+de_genes_pseudo_ept2 <- t(as.data.frame(str_split(rownames(ATres_ept2),":")))[,1]
+go_res_pseudo_ept2 <- enrichGO(de_genes_pseudo_ept2, OrgDb = "org.Hs.eg.db", keyType = "SYMBOL" , ont = "BP")
+```
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+barplot(go_res_pseudo_ept2 , showCategory = 20)
+```
+
+# Extra Regional Plots
+
+## Memory T Cells
+
+```{r , fig.align = 'center' , fig.dim = c(12, 20)}
+rps27a_regions <- rownames(tm_sce_peak)[grep("RPS27A" , rownames(tm_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(tm_sce_peak , colour_by = rps27a_regions[1] ,  shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = rps27a_regions[2], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = rps27a_regions[3], shape_by = "cell_labels" , point_size = 2),
+  ncol=1
+)
+
+
+coq10b_regions <- rownames(tm_sce_peak)[grep("COQ10B" , rownames(tm_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(tm_sce_peak , colour_by = coq10b_regions[5] ,  shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = coq10b_regions[2], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = coq10b_regions[3], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = coq10b_regions[4], shape_by = "cell_labels" , point_size = 2),
+  ncol=1
+)
+
+
+
+krr1_regions <- rownames(tm_sce_peak)[grep("KRR1" , rownames(tm_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[1] ,  shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[2], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[3], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[4], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[5], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[6], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[7], shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(tm_sce_peak , colour_by = krr1_regions[8], shape_by = "cell_labels" , point_size = 2),
+  ncol=2
+)
+
+
+ctla4_regions <- rownames(tm_sce_peak)[grep("CTLA4" , rownames(tm_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(tm_sce_peak , colour_by = ctla4_regions[1] ,  shape_by = "cell_labels"),
+  plotUMAP(tm_sce_peak , colour_by = ctla4_regions[2], shape_by = "cell_labels"),
+  plotUMAP(tm_sce_peak , colour_by = ctla4_regions[3], shape_by = "cell_labels"),
+  ncol=1
+)
+```
+
+## Epithelial Cells
+
+```{r , fig.align = 'center' , fig.dim = c(12, 12)}
+akr1c3_regions <- rownames(ept2_sce_peak)[grep("AKR1C3" , rownames(ept2_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(ept2_sce_peak , colour_by = "cell_labels"),
+  plotUMAP(ept2_sce_peak , colour_by = akr1c3_regions[1] ,  shape_by = "cell_labels" , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = akr1c3_regions[2], shape_by = "cell_labels" , point_size = 2),
+  ncol=1
+)
+
+
+
+sat1_regions <- rownames(ept_sce_peak)[grep("SAT1" , rownames(ept_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(ept2_sce_peak , colour_by = "cell_labels"),
+  plotUMAP(ept2_sce_peak , colour_by = sat1_regions[1] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = sat1_regions[2] , point_size = 2),
+  ncol=1
+)
+
+
+fosb_regions <- rownames(ept2_sce_peak)[grep("FOSB" , rownames(ept2_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(ept2_sce_peak , colour_by = "cell_labels"),
+  plotUMAP(ept2_sce_peak , colour_by = fosb_regions[1] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = fosb_regions[2] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = fosb_regions[3] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = fosb_regions[5] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = fosb_regions[6] , point_size = 2),
+  ncol=2
+)
+
+aco2_regions <- rownames(ept2_sce_peak)[grep("ACO2" , rownames(ept2_sce_peak))]
+
+gridExtra::grid.arrange(
+  plotUMAP(ept2_sce_peak , colour_by = "cell_labels"),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[1] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[2] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[3] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[4] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[5] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[6] , point_size = 2),
+  plotUMAP(ept2_sce_peak , colour_by = aco2_regions[7] , point_size = 2),
+  ncol=2
+)
+```
